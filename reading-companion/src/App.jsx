@@ -343,9 +343,11 @@ function HighlightOverlay({ annotations, pageNum, onClickAnnotation, pageDims })
   const anns = annotations.filter((a) => a.pageNum === pageNum && a.mergedRects?.length > 0);
   if (!anns.length) return null;
 
-  // Un-normalize rects from [0,1] page fractions back to CSS pixels using current page dims
+  // Un-normalize rects from [0,1] page fractions back to CSS pixels using current page dims.
+  // Returns null if we can't safely compute pixel positions (avoids rendering at [0,1] coords).
   const toPixels = (r, ann) => {
-    if (!ann.normalized || !pageDims) return r;
+    if (!ann.normalized) return r;
+    if (!pageDims) return null; // page not yet painted at current scale — skip rendering
     return { left: r.left * pageDims.w, top: r.top * pageDims.h, width: r.width * pageDims.w, height: r.height * pageDims.h };
   };
 
@@ -357,6 +359,7 @@ function HighlightOverlay({ annotations, pageNum, onClickAnnotation, pageDims })
           : getHlColor(ann.color);
         return ann.mergedRects.map((r, i) => {
           const px = toPixels(r, ann);
+          if (!px) return null; // pageDims not ready yet — skip rather than misplace
           return (
             <div key={`${ann.id}-${i}`}
               onClick={(e) => { e.stopPropagation(); onClickAnnotation(ann.id); }}
@@ -476,7 +479,109 @@ function PdfPage({ pdf, pageNum, containerWidth, zoom, annotations, onClickAnnot
       <canvas ref={canvasRef} style={{ display: "block" }} />
       <div ref={textLayerRef} style={{ position: "absolute", top: 0, left: 0, overflow: "hidden", opacity: 0.3, lineHeight: 1, zIndex: 1 }} />
       <HighlightOverlay annotations={annotations} pageNum={pageNum} onClickAnnotation={onClickAnnotation} pageDims={renderDims} />
-      <div style={{ position: "absolute", top: 8, right: 12, fontSize: 11, color: COLORS.textMuted, background: "rgba(255,253,249,0.85)", padding: "2px 8px", borderRadius: 4, zIndex: 3 }}>{pageNum}</div>
+      <div style={{ position: "absolute", top: 8, right: 12, fontSize: 11, color: COLORS.textMuted, background: "rgba(255,253,249,0.85)", padding: "2px 8px", borderRadius: 4, zIndex: 3, userSelect: "none" }}>{pageNum}</div>
+    </div>
+  );
+}
+
+/* ── Thumbnail Strip ── */
+
+// thumbWidth is the CSS pixel width of each thumbnail image (dynamic based on strip width)
+function ThumbnailPage({ pdf, pageNum, isActive, onClick, thumbWidth }) {
+  const canvasRef = useRef(null);
+  const wrapperRef = useRef(null);
+  const [rendered, setRendered] = useState(false);
+
+  // Lazy render: only paint when the thumbnail enters the strip's scroll viewport
+  useEffect(() => {
+    if (!wrapperRef.current) return;
+    const obs = new IntersectionObserver(
+      ([e]) => { if (e.isIntersecting) setRendered(true); },
+      { rootMargin: "600px 0px" }
+    );
+    obs.observe(wrapperRef.current);
+    return () => obs.disconnect();
+  }, []);
+
+  // Re-renders whenever thumbWidth changes (strip resized)
+  useEffect(() => {
+    if (!rendered || !thumbWidth) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const page = await pdf.getPage(pageNum);
+        if (cancelled) return;
+        const dpr = window.devicePixelRatio || 1;
+        const baseVp = page.getViewport({ scale: 1 });
+        const cssScale = thumbWidth / baseVp.width;
+        const cssH = Math.round(baseVp.height * cssScale);
+        const renderVp = page.getViewport({ scale: cssScale * dpr });
+        const canvas = canvasRef.current;
+        if (!canvas || cancelled) return;
+        canvas.width = renderVp.width; canvas.height = renderVp.height;
+        canvas.style.width = `${thumbWidth}px`; canvas.style.height = `${cssH}px`;
+        await page.render({ canvasContext: canvas.getContext("2d"), viewport: renderVp }).promise;
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [rendered, pdf, pageNum, thumbWidth]);
+
+  const thumbH = Math.round((thumbWidth || 80) * 1.414); // A4 aspect ratio placeholder
+
+  return (
+    <div ref={wrapperRef} data-thumb={pageNum} onClick={onClick}
+      style={{ margin: "0 auto 6px", cursor: "pointer", flexShrink: 0, width: thumbWidth }}>
+      {/* Border lives on the image container so it hugs the page, not the label */}
+      <div style={{
+        width: thumbWidth, minHeight: thumbH,
+        background: COLORS.paper, borderRadius: 2, overflow: "hidden",
+        boxShadow: isActive
+          ? `0 0 0 2px ${COLORS.accent}, 0 2px 6px rgba(44,36,23,0.12)`
+          : "0 1px 4px rgba(44,36,23,0.08)",
+        transition: "box-shadow 0.12s",
+      }}
+        onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.boxShadow = `0 0 0 1px ${COLORS.border}, 0 2px 6px rgba(44,36,23,0.1)`; }}
+        onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.boxShadow = "0 1px 4px rgba(44,36,23,0.08)"; }}>
+        {rendered && <canvas ref={canvasRef} style={{ display: "block" }} />}
+      </div>
+      <div style={{ fontSize: 10, color: isActive ? COLORS.accent : COLORS.textMuted, textAlign: "center", paddingTop: 3, fontWeight: isActive ? 600 : 400 }}>{pageNum}</div>
+    </div>
+  );
+}
+
+function ThumbnailStrip({ pdf, numPages, currentPage, onJumpToPage, width, onResizeDrag, onClose }) {
+  const stripRef = useRef(null);
+  const thumbWidth = Math.max(56, width - 24); // leave 12px padding each side
+
+  // Scroll the active thumbnail into view as the user navigates the PDF
+  useEffect(() => {
+    if (!stripRef.current) return;
+    const el = stripRef.current.querySelector(`[data-thumb="${currentPage}"]`);
+    if (el) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [currentPage]);
+
+  return (
+    <div style={{ position: "relative", width, flexShrink: 0, display: "flex", flexDirection: "column", background: COLORS.sidebar, borderRight: `1px solid ${COLORS.border}` }}>
+      {/* Strip header */}
+      <div style={{ padding: "8px 10px 6px", borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+        <span style={{ fontSize: 10, color: COLORS.textMuted, textTransform: "uppercase", fontWeight: 600, letterSpacing: "0.05em" }}>Pages</span>
+        <button onClick={onClose} title="Hide thumbnails"
+          style={{ fontSize: 13, lineHeight: 1, background: "none", border: "none", cursor: "pointer", color: COLORS.textMuted, padding: "0 2px" }}
+          onMouseEnter={(e) => e.currentTarget.style.color = COLORS.text}
+          onMouseLeave={(e) => e.currentTarget.style.color = COLORS.textMuted}>×</button>
+      </div>
+      {/* Thumbnail list */}
+      <div ref={stripRef} style={{ flex: 1, overflowY: "auto", overflowX: "hidden", paddingTop: 8, paddingBottom: 8 }}>
+        {Array.from({ length: numPages }, (_, i) => i + 1).map((num) => (
+          <ThumbnailPage key={num} pdf={pdf} pageNum={num} isActive={num === currentPage}
+            onClick={() => onJumpToPage(num)} thumbWidth={thumbWidth} />
+        ))}
+      </div>
+      {/* Drag handle on right edge */}
+      <div onMouseDown={onResizeDrag}
+        style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 5, cursor: "col-resize", zIndex: 10, background: "transparent", transition: "background 0.15s" }}
+        onMouseEnter={(e) => e.currentTarget.style.background = "rgba(200,132,46,0.25)"}
+        onMouseLeave={(e) => e.currentTarget.style.background = "transparent"} />
     </div>
   );
 }
@@ -623,12 +728,12 @@ function Sidebar({ annotations, activeId, onSelect, onDelete }) {
   const Item = ({ ann }) => {
     const c = getHlColor(ann.color);
     const preview = ann.type === "claude"
-      ? (ann.messages.find((m) => m.role === "assistant")?.content?.slice(0, 90) || (ann.loading ? "Thinking…" : ""))
+      ? (ann.messages.find((m) => m.role === "assistant")?.content || (ann.loading ? "Thinking…" : ""))
       : (ann.note || "No note");
     return (
       <div style={{ display: "flex", alignItems: "stretch", borderBottom: `1px solid ${COLORS.border}` }}>
         <button onClick={() => onSelect(ann.id)} style={{
-          flex: 1, textAlign: "left", padding: "12px 16px",
+          flex: 1, minWidth: 0, textAlign: "left", padding: "12px 16px",
           background: ann.id === activeId ? COLORS.accentLight : "transparent",
           border: "none", cursor: "pointer", borderLeft: `3px solid ${ann.id === activeId ? c.dot : "transparent"}`,
           fontFamily: "'DM Sans', sans-serif",
@@ -779,7 +884,11 @@ export default function App() {
   const [model, setModel] = useState(MODELS[2].id); // default: Opus
   const [history, setHistory] = useState(() => loadHistory());
   const [panelWidth, setPanelWidth] = useState(400);
+  const [showThumbs, setShowThumbs] = useState(true);
+  const [thumbsWidth, setThumbsWidth] = useState(120);
+  const [currentPage, setCurrentPage] = useState(1);
   const panelDragRef = useRef(null);
+  const thumbsDragRef = useRef(null);
   const isDraggingPanelRef = useRef(false);
   const viewerRef = useRef(null);
   const fileNameRef = useRef(fileName);
@@ -829,6 +938,27 @@ export default function App() {
     window.addEventListener("mouseup", up);
   }, [panelWidth]);
 
+  const startThumbsDrag = useCallback((e) => {
+    e.preventDefault();
+    thumbsDragRef.current = { startX: e.clientX, startWidth: thumbsWidth };
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    if (viewerRef.current) viewerRef.current.style.pointerEvents = "none";
+    const move = (ev) => {
+      const delta = ev.clientX - thumbsDragRef.current.startX;
+      setThumbsWidth(Math.max(80, Math.min(240, thumbsDragRef.current.startWidth + delta)));
+    };
+    const up = () => {
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      if (viewerRef.current) viewerRef.current.style.pointerEvents = "";
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  }, [thumbsWidth]);
+
   // Scroll the PDF viewer so the annotation's highlight appears vertically centered
   const jumpToAnnotation = useCallback((ann) => {
     if (!viewerRef.current || !ann) return;
@@ -865,6 +995,29 @@ export default function App() {
     return () => ro.disconnect();
   }, [pdf]);
 
+  // Track which page is most visible in the viewer (drives thumbnail strip highlight + scroll)
+  useEffect(() => {
+    if (!pdf || !viewerRef.current || containerWidth <= 0) return;
+    const visibleRatios = new Map();
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        const num = parseInt(e.target.dataset.page);
+        visibleRatios.set(num, e.isIntersecting ? e.intersectionRatio : 0);
+      });
+      let bestPage = 1, bestRatio = -1;
+      visibleRatios.forEach((ratio, page) => { if (ratio > bestRatio) { bestRatio = ratio; bestPage = page; } });
+      if (bestRatio > 0) setCurrentPage(bestPage);
+    }, { root: viewerRef.current, threshold: [0, 0.1, 0.5, 1.0] });
+    viewerRef.current.querySelectorAll("[data-page]").forEach((el) => obs.observe(el));
+    return () => obs.disconnect();
+  }, [pdf, containerWidth]);
+
+  // Jump viewer to a specific page number (used by thumbnail strip clicks)
+  const jumpToPage = useCallback((pageNum) => {
+    const el = viewerRef.current?.querySelector(`[data-page="${pageNum}"]`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e) => {
@@ -883,7 +1036,7 @@ export default function App() {
       if (!selection) return;
       if (e.key === "h" || e.key === "H") { e.preventDefault(); doHighlight(); }
       if (e.key === "c" || e.key === "C") { e.preventDefault(); doAskClaude(); }
-      if (e.key === "Escape") { setSelection(null); window.getSelection()?.removeAllRanges(); }
+      if (e.key === "Escape") { window.getSelection()?.removeAllRanges(); setSelection(null); }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -946,7 +1099,8 @@ export default function App() {
     const cssW = parseFloat(canvas?.style.width || "0");
     const dpr = canvas && canvas.width > 0 && cssW > 0 ? canvas.width / cssW : (window.devicePixelRatio || 1);
 
-    const pageRects = allRects.filter(r => r.bottom > wr.top && r.top < wr.bottom);
+    // Use center-point containment so rects that merely graze the page boundary are excluded
+    const pageRects = allRects.filter(r => { const mid = (r.top + r.bottom) / 2; return mid > wr.top && mid < wr.bottom; });
     const merged = mergeRects(pageRects, wr);
     if (!merged.length) return;
 
@@ -963,11 +1117,13 @@ export default function App() {
       : merged;
 
     setSelection({ text, mergedRects: storedRects, normalized, screenshot, toolbarRect: range.getBoundingClientRect(), pageNum });
-    window.getSelection()?.removeAllRanges();
+    // Don't clear the browser selection here — leave it visible so the user can see what they selected.
+    // It gets cleared when they commit (H / C) or dismiss (Escape / click away).
   }, []);
 
   const doHighlight = useCallback(() => {
     if (!selection) return;
+    window.getSelection()?.removeAllRanges();
     setAnnotations((prev) => [...prev, {
       id: `ann-${Date.now()}`, pageNum: selection.pageNum, rawText: selection.text,
       mergedRects: selection.mergedRects, normalized: selection.normalized, screenshot: selection.screenshot,
@@ -978,6 +1134,7 @@ export default function App() {
 
   const doAskClaude = useCallback(() => {
     if (!selection) return;
+    window.getSelection()?.removeAllRanges();
     const id = `ann-${Date.now()}`;
     const content = [];
     if (selection.screenshot) content.push({ type: "image", source: { type: "base64", media_type: "image/png", data: selection.screenshot } });
@@ -1029,7 +1186,7 @@ export default function App() {
 
   useEffect(() => {
     const h = (e) => {
-      if (selection && !e.target.closest("[data-toolbar]")) setSelection(null);
+      if (selection && !e.target.closest("[data-toolbar]")) { window.getSelection()?.removeAllRanges(); setSelection(null); }
       if (popoverId && !e.target.closest("[data-popover]")) { setPopoverId(null); setPopoverRect(null); }
     };
     document.addEventListener("mousedown", h);
@@ -1046,6 +1203,11 @@ export default function App() {
 
   return (
     <div style={{ display: "flex", height: "100vh", background: COLORS.bg, overflow: "hidden" }}>
+      {showThumbs && pdf && (
+        <ThumbnailStrip pdf={pdf} numPages={pdf.numPages} currentPage={currentPage}
+          onJumpToPage={jumpToPage} width={thumbsWidth}
+          onResizeDrag={startThumbsDrag} onClose={() => setShowThumbs(false)} />
+      )}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         <div style={{ padding: "10px 24px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.paper, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -1056,6 +1218,11 @@ export default function App() {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            {/* Thumbnail strip toggle */}
+            <button onClick={() => setShowThumbs((v) => !v)} title={showThumbs ? "Hide page thumbnails" : "Show page thumbnails"}
+              style={{ width: 28, height: 28, borderRadius: 6, border: `1px solid ${COLORS.border}`, background: showThumbs ? COLORS.accentLight : "none", cursor: "pointer", fontSize: 13, color: showThumbs ? COLORS.accent : COLORS.textMuted, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              ▦
+            </button>
             {/* Model selector */}
             <div style={{ display: "flex", alignItems: "center", gap: 1, border: `1px solid ${COLORS.border}`, borderRadius: 8, overflow: "hidden" }}>
               {MODELS.map((m) => (
