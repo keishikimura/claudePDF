@@ -39,27 +39,72 @@ Update this file as we work through items.
 
 | # | Item | Status | Agent |
 |---|---|---|---|
-| 5 | Click annotation in sidebar → scroll to page | ⬜ Todo | Haiku |
-| 6 | Page jump input (type page number) | ⬜ Todo | Haiku |
+| 5 | Click annotation in sidebar → scroll to page | ✅ Done | Sonnet |
+| 6 | Page thumbnail strip (lazy-rendered, resizable, closable) | ✅ Done | Sonnet |
 | 7 | Export annotations as Markdown or JSON | ⬜ Todo | Sonnet |
 | 8 | Math/equation rendering in highlights (KaTeX or MathJax) | ✅ Done | Sonnet |
 | 9 | Drag-to-resize the sidebar panel | ✅ Done | Haiku |
 | 10 | Pinch-to-zoom on trackpad (wheel event) | ⬜ Todo | Haiku |
+| 11 | Page jump input (type page number, or use thumbnail strip) | ⬜ Todo | Haiku |
 
 ---
 
-## Sprint 3 — Academic Writing Mode (Refine-inspired)
+## Sprint 3 — Conversation UX
+
+### Branching chat threads
+
+Goal: let the user reply to any Claude message in an annotation thread and
+open a new branch, without abandoning the other lines of inquiry. Each branch
+is a separate linear context passed to Claude (root → current leaf).
+
+UI: **user-selectable** between two modes:
+- **Tab mode** (default): branch tabs appear beneath any message that has
+  multiple children. Compact, keeps the panel narrow.
+- **Tree mode** (opt-in): indented nested replies, Reddit-style. Better for
+  seeing the full shape of the conversation at a glance.
+
+Data model: annotation `messages` becomes a tree of nodes
+`{ id, role, content, children: [] }` rooted at the initial user message.
+Branching creates a new child; navigating switches the active path.
+
+| # | Item | Status | Agent |
+|---|---|---|---|
+| B1 | Tree data model for annotation messages | ⬜ Todo | Sonnet |
+| B2 | Tab UI — branch tabs at split points, linear view within each branch | ⬜ Todo | Sonnet |
+| B3 | Tree UI — indented nested replies (opt-in preference) | ⬜ Todo | Sonnet |
+| B4 | Claude context = path from root to current leaf (no branch leakage) | ⬜ Todo | Sonnet |
+
+### Pop-out detail panel
+
+Goal: detach the annotation detail panel into a separate browser window so
+the user gets more reading space and can position the chat freely. The two
+windows stay in sync — clicking any highlight in the PDF updates the pop-out.
+
+Implementation: `BroadcastChannel` API (same-origin, no server needed).
+Main window emits `{ type: "select", annotation }` on highlight click; pop-out
+listens and renders `DetailPanel`. Replies in the pop-out broadcast back;
+main window applies the state update. Fully bi-directional.
+
+| # | Item | Status | Agent |
+|---|---|---|---|
+| P1 | Pop-out window opens `DetailPanel` via `window.open` | ⬜ Todo | Sonnet |
+| P2 | `BroadcastChannel` sync: selection → pop-out, replies → main | ⬜ Todo | Sonnet |
+| P3 | Main window shows "Pop-out active" indicator; highlights still clickable | ⬜ Todo | Haiku |
+
+---
+
+## Sprint 5 — Academic Writing Mode (Refine-inspired)
 
 Goal: tailor Claude's responses toward academic rigor — the way
 [Refine](https://ben-golub.com) tunes responses for scholarly prose.
 
 | # | Item | Status | Agent |
 |---|---|---|---|
-| 11 | System prompt mode toggle ("General" vs "Academic") | ⬜ Todo | Sonnet |
-| 12 | Academic prompt: ask for claims, evidence, assumptions, gaps | ⬜ Todo | Opus |
-| 13 | Academic prompt: flag logical leaps, undefined terms, hedging | ⬜ Todo | Opus |
-| 14 | Citation-aware context: pass detected author/year spans to Claude | ⬜ Todo | Sonnet |
-| 15 | "Explain like a grad student" vs "Explain like I'm new" presets | ⬜ Todo | Haiku |
+| A1 | System prompt mode toggle ("General" vs "Academic") | ⬜ Todo | Sonnet |
+| A2 | Academic prompt: ask for claims, evidence, assumptions, gaps | ⬜ Todo | Opus |
+| A3 | Academic prompt: flag logical leaps, undefined terms, hedging | ⬜ Todo | Opus |
+| A4 | Citation-aware context: pass detected author/year spans to Claude | ⬜ Todo | Sonnet |
+| A5 | "Explain like a grad student" vs "Explain like I'm new" presets | ⬜ Todo | Haiku |
 
 > **Note on training**: No fine-tuning needed. Prompt engineering alone can produce
 > Refine-level behavior. Opus designs the prompts; Sonnet integrates them.
