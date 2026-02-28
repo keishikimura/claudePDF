@@ -893,7 +893,11 @@ export default function App() {
   const viewerRef = useRef(null);
   const fileNameRef = useRef(fileName);
   fileNameRef.current = fileName;
-  const pendingScrollRef = useRef(null);
+  const pendingScrollRef = useRef(null);       // zoom scroll correction
+  const pendingResizeScrollRef = useRef(null); // resize/strip-toggle scroll anchor
+  const containerWidthRef = useRef(0);         // previous containerWidth (sync, for ResizeObserver)
+  const currentPageRef = useRef(1);            // sync mirror of currentPage state
+  currentPageRef.current = currentPage;
 
   // Zoom with viewport-center preservation
   const handleZoom = useCallback((newZoom) => {
@@ -989,11 +993,37 @@ export default function App() {
     if (!viewerRef.current) return;
     const ro = new ResizeObserver((entries) => {
       if (isDraggingPanelRef.current) return; // don't re-layout pages while resizing panel
-      for (const e of entries) setContainerWidth(e.contentRect.width);
+      for (const e of entries) {
+        const newWidth = e.contentRect.width;
+        // Save a page-relative scroll anchor before layout changes so we can restore it
+        if (containerWidthRef.current > 0 && viewerRef.current) {
+          const pageNum = currentPageRef.current;
+          const el = viewerRef.current.querySelector(`[data-page="${pageNum}"]`);
+          if (el && el.offsetHeight > 0) {
+            const fraction = (viewerRef.current.scrollTop - el.offsetTop) / el.offsetHeight;
+            pendingResizeScrollRef.current = { pageNum, fraction };
+          }
+        }
+        containerWidthRef.current = newWidth;
+        setContainerWidth(newWidth);
+      }
     });
     ro.observe(viewerRef.current);
     return () => ro.disconnect();
   }, [pdf]);
+
+  // Restore scroll anchor after page dims settle (Phase 1 is async, 80ms is enough for cached pages)
+  useEffect(() => {
+    if (!pendingResizeScrollRef.current) return;
+    const { pageNum, fraction } = pendingResizeScrollRef.current;
+    pendingResizeScrollRef.current = null;
+    const t = setTimeout(() => {
+      if (!viewerRef.current) return;
+      const el = viewerRef.current.querySelector(`[data-page="${pageNum}"]`);
+      if (el) viewerRef.current.scrollTop = el.offsetTop + fraction * el.offsetHeight;
+    }, 80);
+    return () => clearTimeout(t);
+  }, [containerWidth]);
 
   // Track which page is most visible in the viewer (drives thumbnail strip highlight + scroll)
   useEffect(() => {
