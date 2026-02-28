@@ -157,9 +157,9 @@ function formatAge(ts) {
 
 /* ── Models ── */
 const MODELS = [
-  { id: "claude-haiku-4-5-20251001", label: "Haiku",  desc: "Fast · lower cost" },
-  { id: "claude-sonnet-4-6",         label: "Sonnet", desc: "Balanced" },
-  { id: "claude-opus-4-6",           label: "Opus",   desc: "Most capable" },
+  { id: "claude-haiku-4-5-20251001", label: "Haiku",  short: "H", desc: "Fast · lower cost" },
+  { id: "claude-sonnet-4-6",         label: "Sonnet", short: "S", desc: "Balanced" },
+  { id: "claude-opus-4-6",           label: "Opus",   short: "O", desc: "Most capable" },
 ];
 
 /* ── API via local proxy ── */
@@ -995,8 +995,9 @@ export default function App() {
       if (isDraggingPanelRef.current) return; // don't re-layout pages while resizing panel
       for (const e of entries) {
         const newWidth = e.contentRect.width;
-        // Save a page-relative scroll anchor before layout changes so we can restore it
-        if (containerWidthRef.current > 0 && viewerRef.current) {
+        // Save anchor only once per gesture — don't overwrite mid-resize so the original
+        // reading position is preserved even during rapid continuous resize callbacks.
+        if (!pendingResizeScrollRef.current && containerWidthRef.current > 0 && viewerRef.current) {
           const pageNum = currentPageRef.current;
           const el = viewerRef.current.querySelector(`[data-page="${pageNum}"]`);
           if (el && el.offsetHeight > 0) {
@@ -1012,12 +1013,15 @@ export default function App() {
     return () => ro.disconnect();
   }, [pdf]);
 
-  // Restore scroll anchor after page dims settle (Phase 1 is async, 80ms is enough for cached pages)
+  // Restore scroll anchor after page dims settle (Phase 1 is async, 80ms is enough for cached pages).
+  // The cleanup cancels the timeout on each rapid containerWidth change, so we only restore
+  // 80ms after the *last* resize event. The anchor is nulled inside the timeout (not before)
+  // so intermediate resize callbacks don't overwrite it with a drifted position.
   useEffect(() => {
     if (!pendingResizeScrollRef.current) return;
     const { pageNum, fraction } = pendingResizeScrollRef.current;
-    pendingResizeScrollRef.current = null;
     const t = setTimeout(() => {
+      pendingResizeScrollRef.current = null; // clear only after restoring, not before
       if (!viewerRef.current) return;
       const el = viewerRef.current.querySelector(`[data-page="${pageNum}"]`);
       if (el) viewerRef.current.scrollTop = el.offsetTop + fraction * el.offsetHeight;
@@ -1230,6 +1234,11 @@ export default function App() {
   );
 
   const pageNums = Array.from({ length: pdf.numPages }, (_, i) => i + 1);
+  // Responsive header: containerWidth already tracks the main column width.
+  // isCompact: hide ▦ toggle, use short model labels, tighten gaps
+  // isTiny:    also hide model selector entirely
+  const isCompact = containerWidth > 0 && containerWidth < 520;
+  const isTiny    = containerWidth > 0 && containerWidth < 360;
 
   return (
     <div style={{ display: "flex", height: "100vh", background: COLORS.bg, overflow: "hidden" }}>
@@ -1239,51 +1248,48 @@ export default function App() {
           onResizeDrag={startThumbsDrag} onClose={() => setShowThumbs(false)} />
       )}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        <div style={{ padding: "10px 24px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.paper, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ fontSize: 20 }}>📖</span>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.text }}>{fileName}</div>
-              <div style={{ fontSize: 12, color: COLORS.textMuted }}>{pdf.numPages} pages · {annotations.length} annotations</div>
+        <div style={{ padding: "8px 16px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.paper, display: "flex", alignItems: "center", gap: 8, flexShrink: 0, overflow: "hidden" }}>
+          {/* Left: file info — shrinks first, filename truncates */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0, overflow: "hidden" }}>
+            <span style={{ fontSize: 18, flexShrink: 0 }}>📖</span>
+            <div style={{ minWidth: 0, overflow: "hidden" }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fileName}</div>
+              {!isTiny && <div style={{ fontSize: 11, color: COLORS.textMuted }}>{pdf.numPages} pages · {annotations.length} annotations</div>}
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            {/* Thumbnail strip toggle */}
-            <button onClick={() => setShowThumbs((v) => !v)} title={showThumbs ? "Hide page thumbnails" : "Show page thumbnails"}
-              style={{ width: 28, height: 28, borderRadius: 6, border: `1px solid ${COLORS.border}`, background: showThumbs ? COLORS.accentLight : "none", cursor: "pointer", fontSize: 13, color: showThumbs ? COLORS.accent : COLORS.textMuted, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              ▦
-            </button>
-            {/* Model selector */}
-            <div style={{ display: "flex", alignItems: "center", gap: 1, border: `1px solid ${COLORS.border}`, borderRadius: 8, overflow: "hidden" }}>
-              {MODELS.map((m) => (
-                <button key={m.id} onClick={() => setModel(m.id)} title={m.desc}
-                  style={{ padding: "5px 11px", fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer", background: model === m.id ? COLORS.accent : "none", color: model === m.id ? "#fff" : COLORS.textMuted, transition: "background 0.12s, color 0.12s" }}>
-                  {m.label}
-                </button>
-              ))}
-            </div>
-            {/* FIX 2: Zoom controls — also Cmd+= / Cmd+- */}
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <button
-                onClick={() => handleZoom(Math.max(MIN_ZOOM, parseFloat((zoom - ZOOM_STEP).toFixed(2))))}
-                title="Zoom out (⌘-)"
-                style={{ width: 28, height: 28, borderRadius: 6, border: `1px solid ${COLORS.border}`, background: "none", cursor: "pointer", fontSize: 16, color: COLORS.text, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                −
+          {/* Right: controls — flexShrink: 0 keeps them from collapsing */}
+          <div style={{ display: "flex", alignItems: "center", gap: isCompact ? 6 : 12, flexShrink: 0 }}>
+            {/* Thumbnail toggle — hidden when compact (strip's own × button still works) */}
+            {!isCompact && (
+              <button onClick={() => setShowThumbs((v) => !v)} title={showThumbs ? "Hide thumbnails" : "Show thumbnails"}
+                style={{ width: 28, height: 28, borderRadius: 6, border: `1px solid ${COLORS.border}`, background: showThumbs ? COLORS.accentLight : "none", cursor: "pointer", fontSize: 13, color: showThumbs ? COLORS.accent : COLORS.textMuted, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                ▦
               </button>
-              <span style={{ fontSize: 13, minWidth: 44, textAlign: "center", color: COLORS.text, fontVariantNumeric: "tabular-nums" }}>
-                {Math.round(zoom * 100)}%
-              </span>
-              <button
-                onClick={() => handleZoom(Math.min(MAX_ZOOM, parseFloat((zoom + ZOOM_STEP).toFixed(2))))}
-                title="Zoom in (⌘=)"
-                style={{ width: 28, height: 28, borderRadius: 6, border: `1px solid ${COLORS.border}`, background: "none", cursor: "pointer", fontSize: 16, color: COLORS.text, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                +
-              </button>
+            )}
+            {/* Model selector — hidden when tiny, abbreviated when compact */}
+            {!isTiny && (
+              <div style={{ display: "flex", alignItems: "center", gap: 1, border: `1px solid ${COLORS.border}`, borderRadius: 8, overflow: "hidden" }}>
+                {MODELS.map((m) => (
+                  <button key={m.id} onClick={() => setModel(m.id)} title={m.desc}
+                    style={{ padding: isCompact ? "5px 7px" : "5px 11px", fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer", background: model === m.id ? COLORS.accent : "none", color: model === m.id ? "#fff" : COLORS.textMuted, transition: "background 0.12s, color 0.12s" }}>
+                    {isCompact ? m.short : m.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {/* Zoom controls — always visible */}
+            <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+              <button onClick={() => handleZoom(Math.max(MIN_ZOOM, parseFloat((zoom - ZOOM_STEP).toFixed(2))))} title="Zoom out (⌘-)"
+                style={{ width: 26, height: 26, borderRadius: 6, border: `1px solid ${COLORS.border}`, background: "none", cursor: "pointer", fontSize: 16, color: COLORS.text, display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
+              <span style={{ fontSize: 12, minWidth: 38, textAlign: "center", color: COLORS.text, fontVariantNumeric: "tabular-nums" }}>{Math.round(zoom * 100)}%</span>
+              <button onClick={() => handleZoom(Math.min(MAX_ZOOM, parseFloat((zoom + ZOOM_STEP).toFixed(2))))} title="Zoom in (⌘=)"
+                style={{ width: 26, height: 26, borderRadius: 6, border: `1px solid ${COLORS.border}`, background: "none", cursor: "pointer", fontSize: 16, color: COLORS.text, display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
             </div>
-            <button
-              onClick={() => { setPdf(null); setAnnotations([]); setActiveId(null); setPageTexts([]); setLoadError(null); setSelection(null); setZoom(1.0); }}
-              style={{ fontSize: 13, padding: "6px 14px", borderRadius: 8, border: `1px solid ${COLORS.border}`, background: "none", color: COLORS.textMuted, cursor: "pointer" }}>
-              New PDF
+            {/* New PDF — always visible */}
+            <button onClick={() => { setPdf(null); setAnnotations([]); setActiveId(null); setPageTexts([]); setLoadError(null); setSelection(null); setZoom(1.0); }}
+              title="Open a new PDF"
+              style={{ fontSize: 12, padding: isCompact ? "5px 8px" : "5px 12px", borderRadius: 8, border: `1px solid ${COLORS.border}`, background: "none", color: COLORS.textMuted, cursor: "pointer", whiteSpace: "nowrap" }}>
+              {isTiny ? "✕" : "New PDF"}
             </button>
           </div>
         </div>
