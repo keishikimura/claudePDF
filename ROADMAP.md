@@ -41,11 +41,11 @@ Update this file as we work through items.
 |---|---|---|---|
 | 5 | Click annotation in sidebar → scroll to page | ✅ Done | Sonnet |
 | 6 | Page thumbnail strip (lazy-rendered, resizable, closable) | ✅ Done | Sonnet |
-| 7 | Export annotations as Markdown or JSON | ⬜ Todo | Sonnet |
+| 7 | Export annotations as Markdown or JSON | ✅ Done | Sonnet |
 | 8 | Math/equation rendering in highlights (KaTeX or MathJax) | ✅ Done | Sonnet |
 | 9 | Drag-to-resize the sidebar panel | ✅ Done | Haiku |
-| 10 | Pinch-to-zoom on trackpad (wheel event) | ⬜ Todo | Haiku |
-| 11 | Page jump input (type page number, or use thumbnail strip) | ⬜ Todo | Haiku |
+| 10 | Pinch-to-zoom on trackpad (wheel event) | ✅ Done | Haiku |
+| 11 | Page jump input (type page number, prev/next arrows) | ✅ Done | Sonnet |
 
 ---
 
@@ -69,10 +69,10 @@ Branching creates a new child; navigating switches the active path.
 
 | # | Item | Status | Agent |
 |---|---|---|---|
-| B1 | Tree data model for annotation messages | ⬜ Todo | Sonnet |
-| B2 | Tab UI — branch tabs at split points, linear view within each branch | ⬜ Todo | Sonnet |
-| B3 | Tree UI — indented nested replies (opt-in preference) | ⬜ Todo | Sonnet |
-| B4 | Claude context = path from root to current leaf (no branch leakage) | ⬜ Todo | Sonnet |
+| B1 | Tree data model for annotation messages | ✅ Done | Sonnet |
+| B2 | Tab UI — branch tabs at split points, linear view within each branch | ✅ Done | Sonnet |
+| B3 | Tree UI — indented nested replies (opt-in preference) | ✅ Done | Sonnet |
+| B4 | Claude context = path from root to current leaf (no branch leakage) | ✅ Done | Sonnet |
 
 ### Pop-out detail panel
 
@@ -87,9 +87,9 @@ main window applies the state update. Fully bi-directional.
 
 | # | Item | Status | Agent |
 |---|---|---|---|
-| P1 | Pop-out window opens `DetailPanel` via `window.open` | ⬜ Todo | Sonnet |
-| P2 | `BroadcastChannel` sync: selection → pop-out, replies → main | ⬜ Todo | Sonnet |
-| P3 | Main window shows "Pop-out active" indicator; highlights still clickable | ⬜ Todo | Haiku |
+| P1 | Pop-out window opens `DetailPanel` via `window.open` | ✅ Done | Sonnet |
+| P2 | `BroadcastChannel` sync: selection → pop-out, replies → main | ✅ Done | Sonnet |
+| P3 | Main window shows "Pop-out active" indicator; highlights still clickable | ✅ Done | Haiku |
 
 ---
 
@@ -100,11 +100,11 @@ Goal: tailor Claude's responses toward academic rigor — the way
 
 | # | Item | Status | Agent |
 |---|---|---|---|
-| A1 | System prompt mode toggle ("General" vs "Academic") | ⬜ Todo | Sonnet |
-| A2 | Academic prompt: ask for claims, evidence, assumptions, gaps | ⬜ Todo | Opus |
-| A3 | Academic prompt: flag logical leaps, undefined terms, hedging | ⬜ Todo | Opus |
-| A4 | Citation-aware context: pass detected author/year spans to Claude | ⬜ Todo | Sonnet |
-| A5 | "Explain like a grad student" vs "Explain like I'm new" presets | ⬜ Todo | Haiku |
+| A1 | System prompt mode toggle ("General" vs "Academic") | ✅ Done | Sonnet |
+| A2 | Academic prompt: ask for claims, evidence, assumptions, gaps | ✅ Done | Sonnet |
+| A3 | Academic prompt: flag logical leaps, undefined terms, hedging | ✅ Done | Sonnet |
+| A4 | Citation-aware context: pass detected author/year spans to Claude | ✅ Done | Sonnet |
+| A5 | "Explain like a grad student" vs "Explain like I'm new" presets | ✅ Done | Sonnet |
 
 > **Note on training**: No fine-tuning needed. Prompt engineering alone can produce
 > Refine-level behavior. Opus designs the prompts; Sonnet integrates them.
@@ -119,10 +119,10 @@ and a running "big-picture" tracker surfaces aggregate confusion and open questi
 
 | # | Item | Status | Agent |
 |---|---|---|---|
-| 22 | Project directory: named collections that group related PDFs | ⬜ Todo | Opus |
-| 23 | Per-project confusion tracker: starred questions/gaps aggregated from all PDFs | ⬜ Todo | Sonnet |
-| 24 | Project-level Claude: "across all papers I've read, what do I still not understand about X?" | ⬜ Todo | Opus |
-| 25 | Project view: side-by-side PDFs, shared annotation search | ⬜ Todo | Opus |
+| 22 | Project directory: named collections that group related PDFs | ✅ Done | Sonnet |
+| 23 | Per-project confusion tracker: starred questions/gaps aggregated from all PDFs | ✅ Done | Sonnet |
+| 24 | Project-level Claude: "across all papers I've read, what do I still not understand about X?" | ✅ Done | Sonnet |
+| 25 | Project view: side-by-side PDFs, shared annotation search | ✅ Done | Sonnet |
 
 ---
 
@@ -134,16 +134,31 @@ triggers a targeted read of the document.
 
 | # | Item | Status | Agent |
 |---|---|---|---|
-| 16 | Persistent annotation store (SQLite or file, not just localStorage) | ⬜ Todo | Sonnet |
-| 17 | Per-session "knowledge log" — key concepts, definitions, open questions | ⬜ Todo | Sonnet |
-| 18 | Cross-document search: "what did I read about X?" | ⬜ Todo | Opus |
-| 19 | Adaptive context: detect if question is general vs paper-specific | ⬜ Todo | Opus |
-| 20 | If paper-specific: pass only relevant pages (semantic chunking) | ⬜ Todo | Opus |
-| 21 | Knowledge graph view: concepts linked across papers | ⬜ Todo | Opus |
+| 16 | Persistent annotation store (SQLite or file, not just localStorage) | ✅ Done | Sonnet |
+| 17 | Per-session "knowledge log" — key concepts, definitions, open questions | ✅ Done | Sonnet |
+| 18 | Cross-document search: "what did I read about X?" | ✅ Done | Sonnet |
+| 19 | Adaptive context: detect if question is general vs paper-specific | ✅ Done | Sonnet |
+| 20 | If paper-specific: pass only relevant pages (semantic chunking) | ✅ Done | Sonnet |
+| 21 | Knowledge graph view: concepts linked across papers | ✅ Done | Sonnet |
 
 > **Cost mitigation**: Use embeddings (e.g. via Voyage AI) to chunk and index PDF text.
 > Only send chunks with high semantic similarity to the question — not full documents.
 > Haiku handles simple lookups; Sonnet handles synthesis; Opus handles graph reasoning.
+
+---
+
+## Sprint 6 — Research Queue
+
+Goal: capture forward-looking research questions while reading and consolidate them
+into a thematic index on the home screen. Distinct from clarification questions (Claude
+threads) — these are open-ended inquiries to pursue later, possibly across documents.
+
+| # | Item | Status | Agent |
+|---|---|---|---|
+| R1 | `type: "research"` annotation; `R` button in SelectionToolbar with inline question input | ✅ Done | Sonnet |
+| R2 | Sidebar "Research" tab — purple visual treatment, lists all research questions | ✅ Done | Sonnet |
+| R3 | Home screen Research Queue: cross-document index via `/api/all-research` | ✅ Done | Sonnet |
+| R4 | "Synthesize" button: Claude groups research questions into themes (markdown output) | ✅ Done | Sonnet |
 
 ---
 
@@ -153,7 +168,7 @@ triggers a targeted read of the document.
 - Collaborative annotations (shared session)
 - Audio read-aloud with highlight sync
 - Browser extension version
-- Export to Anki flashcards from Q&A threads
+- ✅ Export to Anki flashcards from Q&A threads (tab-separated .txt; front=highlight, back=Claude's first response)
 
 ---
 
